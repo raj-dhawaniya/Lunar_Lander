@@ -1,0 +1,37 @@
+name: Train Lunar Lander Agent
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install gymnasium numpy argparse
+
+    - name: Train the agent
+      run: python train_agent.py --train --filename best_policy.npy
+
+    - name: Upload best policy
+      uses: actions/upload-artifact@v4
+      with:
+        name: best-policy
+        path: best_policy.npy
