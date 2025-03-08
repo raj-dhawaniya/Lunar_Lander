@@ -24,8 +24,10 @@ jobs:
 
     - name: Install dependencies
       run: |
+        sudo apt-get update
+        sudo apt-get install -y swig  # Required for Box2D
         python -m pip install --upgrade pip
-        pip install gymnasium numpy argparse
+        pip install gymnasium[box2d] numpy argparse
 
     - name: Train the agent
       run: python train_agent.py --train --filename best_policy.npy
