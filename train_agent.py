@@ -8,7 +8,6 @@ import torch.optim as optim
 import torch.nn.functional as F
 from collections import deque
 import random
-from evaluate_agent import evaluate_policy  # Added import
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -70,11 +69,6 @@ def train_reinforcement_learning(env_name='LunarLander-v3', episodes=4000, learn
     model = ActorCritic(input_dim, output_dim).to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
-    # Early stopping variables
-    best_avg_reward = -float('inf')
-    patience = 5
-    no_improve_count = 0
-    
     for episode in range(episodes):
         state, info = env.reset()
         log_probs = []
@@ -113,40 +107,15 @@ def train_reinforcement_learning(env_name='LunarLander-v3', episodes=4000, learn
         
         if (episode + 1) % 100 == 0:
             print(f"Episode {episode + 1}, Loss: {loss.item():.4f}")
-            
-            # Define policy_action for evaluation
-            def policy_action(policy, observation):
-                return select_action(policy, observation, greedy=True)
-            
-            # Evaluate the policy
-            model.eval()
-            avg_reward = evaluate_policy(model, policy_action, total_episodes=10, render_first=0)
-            model.train()
-            print(f"Validation Average Reward: {avg_reward:.2f}")
-            
-            # Early stopping logic
-            if avg_reward > best_avg_reward:
-                best_avg_reward = avg_reward
-                no_improve_count = 0
-                torch.save(model.state_dict(), "best_policy.pth")
-                print(f"New best model saved with reward: {best_avg_reward:.2f}")
-            else:
-                no_improve_count += 1
-                print(f"No improvement, count: {no_improve_count}/{patience}")
-                if no_improve_count >= patience:
-                    print(f"Early stopping triggered after {episode + 1} episodes.")
-                    break
     
-    if episode == episodes - 1:
-        torch.save(model.state_dict(), "best_policy.pth")
-        print("Training completed without early stopping.")
+    torch.save(model.state_dict(), "best_policy.pth")
     print("Policy trained and saved as 'best_policy.pth'.")
 
 def load_policy(filename, env_name='LunarLander-v3'):
     env = gym.make(env_name)
     input_dim = env.observation_space.shape[0]
     output_dim = env.action_space.n
-    model = ActorCritic(input_dim, output_dim).to(device)
+    model = ActorCritic(input_dim, output_dim).to(device)  # Changed from PolicyNetwork to ActorCritic
     model.load_state_dict(torch.load(filename, map_location=device))
     model.eval()
     return model
@@ -161,7 +130,7 @@ def play_policy(filename, episodes=5, env_name='LunarLander-v3'):
         total_reward = 0
         
         while not done:
-            action = select_action(model, state, greedy=True)
+            action = select_action(model, state, greedy=True)  # Use greedy selection for evaluation
             state, reward, terminated, truncated, info = env.step(action)
             total_reward += reward
             done = terminated or truncated

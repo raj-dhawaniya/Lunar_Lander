@@ -1,28 +1,40 @@
-import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-def policy_action(params, observation):
-    # Check if params is a PyTorch state_dict (Neural Network model) or raw weights (Genetic Algorithm)
-    if isinstance(params, dict):
-        model = PolicyNetwork()
-        model.load_state_dict(params)
-        model.eval()
-        with torch.no_grad():
-            logits = model(torch.tensor(observation, dtype=torch.float32))
-        return torch.argmax(logits).item()
-    else:
-        W = params[:32].reshape(8, 4)
-        b = params[32:].reshape(4)
-        logits = np.dot(observation, W) + b
-        return np.argmax(logits)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class PolicyNetwork(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc1 = nn.Linear(8, 16)  # First layer (8 inputs → 16 neurons)
-        self.fc2 = nn.Linear(16, 4)  # Second layer (16 neurons → 4 outputs)
-    
+class ActorCritic(nn.Module):
+    def __init__(self, input_dim=8, output_dim=4):
+        super(ActorCritic, self).__init__()
+        # Actor
+        self.actor_fc1 = nn.Linear(input_dim, 512)
+        self.actor_fc2 = nn.Linear(512, 256)
+        self.actor_fc3 = nn.Linear(256, 128)
+        self.actor_fc4 = nn.Linear(128, output_dim)
+
     def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        return self.fc2(x)  # Output logits
+        a = F.relu(self.actor_fc1(x))
+        a = F.relu(self.actor_fc2(a))
+        a = F.relu(self.actor_fc3(a))
+        return F.softmax(self.actor_fc4(a), dim=-1)
+
+# Global model instance to avoid reloading on every call
+_model = None
+
+def load_policy(policy_filename):
+    """Loads the policy model only once and returns it."""
+    global _model
+    if _model is None:
+        _model = ActorCritic().to(device)
+        _model.load_state_dict(torch.load(policy_filename, map_location=device))
+        _model.eval()
+    return _model
+
+def policy_action(policy_filename, observation):
+    """Predicts the action given an observation using the trained policy."""
+    model = load_policy(policy_filename)
+    with torch.no_grad():
+        obs_tensor = torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0)
+        action_probs = model(obs_tensor)
+        return torch.argmax(action_probs).item()
