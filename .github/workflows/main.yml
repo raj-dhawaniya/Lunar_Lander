@@ -44,11 +44,12 @@ jobs:
       run: |
         if [ -f "best_policy.npy" ]; then
           echo "Resuming training from best_policy.npy..."
-          timeout 5h55m python train_agent.py --train --filename best_policy.npy
+          timeout 21300s python train_agent.py --train --filename best_policy.npy
         else
           echo "No previous model found. Training from scratch..."
-          timeout 5h55m python train_agent.py --train --filename best_policy.npy
+          timeout 21300s python train_agent.py --train --filename best_policy.npy
         fi
+       
 
     - name: Upload updated best policy
       uses: actions/upload-artifact@v4
