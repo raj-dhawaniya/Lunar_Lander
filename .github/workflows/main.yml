@@ -1,9 +1,7 @@
 name: Train Lunar Lander Agent
 
 on:
-  schedule:
-    - cron: '30 1 * * *'  # Runs every day at 7:00 AM IST (01:30 UTC)
-  workflow_dispatch:
+  workflow_dispatch:  # Runs only when manually triggered
 
 jobs:
   train:
@@ -23,12 +21,25 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y swig  # Required for Box2D
         python -m pip install --upgrade pip
-        pip install gymnasium[box2d] numpy argparse
+        pip install gymnasium[box2d] numpy argparse torch
 
-    - name: Train the agent
-      run: timeout 6h python train_agent.py --train --filename best_policy.npy
+    - name: Download previous best policy (if available)
+      uses: actions/download-artifact@v4
+      with:
+        name: best-policy
+        path: .
 
-    - name: Upload best policy
+    - name: Train the agent (Resume if best_policy.npy exists)
+      run: |
+        if [ -f "best_policy.npy" ]; then
+          echo "Resuming training from best_policy.npy..."
+          timeout 5h55m python train_agent.py --train --filename best_policy.npy
+        else
+          echo "No previous model found. Training from scratch..."
+          timeout 5h30m python train_agent.py --train --filename best_policy.npy
+        fi
+
+    - name: Upload updated best policy
       uses: actions/upload-artifact@v4
       with:
         name: best-policy
