@@ -6,85 +6,153 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from collections import deque
+import random
+from evaluate_agent import evaluate_policy  # Added import
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class PolicyNetwork(nn.Module):
+class ActorCritic(nn.Module):
     def __init__(self, input_dim, output_dim):
-        super(PolicyNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, output_dim)
-        self.dropout = nn.Dropout(p=0.2)
+        super(ActorCritic, self).__init__()
+        # Actor
+        self.actor_fc1 = nn.Linear(input_dim, 256)
+        self.actor_fc2 = nn.Linear(256, 128)
+        self.actor_fc3 = nn.Linear(128, output_dim)
+        # Critic
+        self.critic_fc1 = nn.Linear(input_dim, 256)
+        self.critic_fc2 = nn.Linear(256, 128)
+        self.critic_fc3 = nn.Linear(128, 1)
+        self.dropout = nn.Dropout(p=0.1)
     
     def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = torch.relu(self.fc2(x))
-        return F.softmax(self.fc3(x), dim=-1)
+        # Actor
+        a = torch.relu(self.actor_fc1(x))
+        a = self.dropout(a)
+        a = torch.relu(self.actor_fc2(a))
+        action_probs = F.softmax(self.actor_fc3(a), dim=-1)
+        # Critic
+        c = torch.relu(self.critic_fc1(x))
+        c = self.dropout(c)
+        c = torch.relu(self.critic_fc2(c))
+        value = self.critic_fc3(c)
+        return action_probs, value
 
-def select_action(policy_net, state, temperature=0.8):
+def select_action(model, state, episode=None, total_episodes=None, temp_start=1.0, temp_end=0.5, greedy=False):
     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-    action_probs = policy_net(state)
-    action_probs = action_probs.pow(1 / temperature)  # Temperature scaling for exploration
-    action_probs /= action_probs.sum()  # Normalize
-    action = torch.multinomial(action_probs, 1).item()
+    action_probs, _ = model(state)
+    
+    if greedy:
+        # Greedy selection for evaluation
+        action = torch.argmax(action_probs).item()
+    else:
+        # Temperature-based sampling for training
+        temperature = temp_start - (temp_start - temp_end) * (episode / total_episodes)
+        action_probs = action_probs.pow(1 / temperature)
+        action_probs /= action_probs.sum()
+        action = torch.multinomial(action_probs, 1).item()
     return action
 
-def train_reinforcement_learning(env_name='LunarLander-v3', episodes=2000, learning_rate=0.0005, gamma=0.99):
+class ReplayBuffer:
+    def __init__(self, capacity):
+        self.buffer = deque(maxlen=capacity)
+    
+    def add(self, state, action, reward, next_state, done):
+        self.buffer.append((state, action, reward, next_state, done))
+    
+    def sample(self, batch_size):
+        return random.sample(self.buffer, min(len(self.buffer), batch_size))
+
+def train_reinforcement_learning(env_name='LunarLander-v3', episodes=4000, learning_rate=0.0001, gamma=0.995):
     env = gym.make(env_name)
     input_dim = env.observation_space.shape[0]
     output_dim = env.action_space.n
-    policy_net = PolicyNetwork(input_dim, output_dim).to(device)
-    optimizer = optim.Adam(policy_net.parameters(), lr=learning_rate)
+    model = ActorCritic(input_dim, output_dim).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    
+    # Early stopping variables
+    best_avg_reward = -float('inf')
+    patience = 5
+    no_improve_count = 0
     
     for episode in range(episodes):
         state, info = env.reset()
         log_probs = []
+        values = []
         rewards = []
         done = False
         
         while not done:
-            action = select_action(policy_net, state)
-            state, reward, terminated, truncated, info = env.step(action)
+            action = select_action(model, state, episode, episodes, temp_start=1.0, temp_end=0.5)
+            state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+            action_probs, value = model(state_tensor)
+            next_state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
-            log_probs.append(torch.log(policy_net(torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0))[0, action]))
-            rewards.append(np.clip(reward, -1, 1))  # Clip rewards to stabilize training
+            log_probs.append(torch.log(action_probs[0, action]))
+            values.append(value)
+            rewards.append(np.clip(reward, -2, 2))
+            state = next_state
         
-        # Compute discounted rewards
-        discounted_rewards = []
+        # Compute returns and advantages
+        returns = []
         G = 0
         for r in reversed(rewards):
             G = r + gamma * G
-            discounted_rewards.insert(0, G)
-        discounted_rewards = torch.tensor(discounted_rewards, dtype=torch.float32, device=device)
+            returns.insert(0, G)
+        returns = torch.tensor(returns, dtype=torch.float32, device=device)
+        values = torch.cat(values).squeeze()
+        advantages = returns - values
         
-        # Normalize rewards
-        discounted_rewards = (discounted_rewards - discounted_rewards.mean()) / (discounted_rewards.std() + 1e-9)
-        
-        # Compute policy loss with entropy bonus
-        loss = -torch.sum(torch.stack(log_probs) * discounted_rewards) - 0.01 * torch.sum(torch.stack(log_probs).exp() * torch.stack(log_probs))
+        # Compute losses
+        actor_loss = -torch.mean(torch.stack(log_probs) * advantages.detach())
+        critic_loss = F.mse_loss(values, returns)
+        loss = actor_loss + 0.5 * critic_loss
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         
         if (episode + 1) % 100 == 0:
             print(f"Episode {episode + 1}, Loss: {loss.item():.4f}")
+            
+            # Define policy_action for evaluation
+            def policy_action(policy, observation):
+                return select_action(policy, observation, greedy=True)
+            
+            # Evaluate the policy
+            model.eval()
+            avg_reward = evaluate_policy(model, policy_action, total_episodes=10, render_first=0)
+            model.train()
+            print(f"Validation Average Reward: {avg_reward:.2f}")
+            
+            # Early stopping logic
+            if avg_reward > best_avg_reward:
+                best_avg_reward = avg_reward
+                no_improve_count = 0
+                torch.save(model.state_dict(), "best_policy.pth")
+                print(f"New best model saved with reward: {best_avg_reward:.2f}")
+            else:
+                no_improve_count += 1
+                print(f"No improvement, count: {no_improve_count}/{patience}")
+                if no_improve_count >= patience:
+                    print(f"Early stopping triggered after {episode + 1} episodes.")
+                    break
     
-    torch.save(policy_net.state_dict(), "best_policy.pth")
-    print("Policy trained and saved.")
+    if episode == episodes - 1:
+        torch.save(model.state_dict(), "best_policy.pth")
+        print("Training completed without early stopping.")
+    print("Policy trained and saved as 'best_policy.pth'.")
 
 def load_policy(filename, env_name='LunarLander-v3'):
     env = gym.make(env_name)
     input_dim = env.observation_space.shape[0]
     output_dim = env.action_space.n
-    policy_net = PolicyNetwork(input_dim, output_dim).to(device)
-    policy_net.load_state_dict(torch.load(filename, map_location=device))
-    policy_net.eval()
-    return policy_net
+    model = ActorCritic(input_dim, output_dim).to(device)
+    model.load_state_dict(torch.load(filename, map_location=device))
+    model.eval()
+    return model
 
 def play_policy(filename, episodes=5, env_name='LunarLander-v3'):
-    policy_net = load_policy(filename, env_name)
+    model = load_policy(filename, env_name)
     env = gym.make(env_name, render_mode='human')
     
     for episode in range(episodes):
@@ -93,7 +161,7 @@ def play_policy(filename, episodes=5, env_name='LunarLander-v3'):
         total_reward = 0
         
         while not done:
-            action = select_action(policy_net, state)
+            action = select_action(model, state, greedy=True)
             state, reward, terminated, truncated, info = env.step(action)
             total_reward += reward
             done = terminated or truncated
