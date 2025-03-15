@@ -23,11 +23,22 @@ jobs:
         python -m pip install --upgrade pip
         pip install gymnasium[box2d] numpy argparse torch
 
+    - name: Get previous run ID
+      id: get_run_id
+      run: |
+        PREVIOUS_RUN_ID=$(gh run list --workflow="Train Lunar Lander Agent" --status=success --limit=1 | cut -f 1)
+        echo "previous_run_id=$PREVIOUS_RUN_ID" >> $GITHUB_OUTPUT
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Download previous best policy (if available)
+      if: steps.get_run_id.outputs.previous_run_id != ''
       uses: actions/download-artifact@v4
       with:
         name: best-policy
         path: .
+        run_id: ${{ steps.get_run_id.outputs.previous_run_id }}
+      continue-on-error: true
 
     - name: Train the agent (Resume if best_policy.npy exists)
       run: |
