@@ -3,25 +3,12 @@ import numpy as np
 import argparse
 import importlib
 
-def evaluate_policy(policy, policy_action, env_name="LunarLander-v3", total_episodes=100, render_first=5):
-    """
-    Evaluate a policy over a specified number of episodes.
-
-    Args:
-        policy: The policy object (e.g., model, weights, or None if policy_action handles it).
-        policy_action: Function that takes (policy, observation) and returns an action.
-        env_name: Name of the environment (default: "LunarLander-v3").
-        total_episodes: Number of episodes to evaluate (default: 100).
-        render_first: Number of initial episodes to render (default: 5).
-
-    Returns:
-        Average reward over all episodes.
-    """
+def evaluate_policy(policy, policy_action, total_episodes=100, render_first=5):
     total_reward = 0.0
     for episode in range(total_episodes):
-        # Disable rendering during training evaluations by setting render_first=0
+        # Render the first few episodes
         render_mode = "human" if episode < render_first else "rgb_array"
-        env = gym.make(env_name, render_mode=render_mode)
+        env = gym.make("LunarLander-v3", render_mode=render_mode)
         observation, info = env.reset()
         episode_reward = 0.0
         done = False
@@ -48,23 +35,23 @@ def main():
     )
     args = parser.parse_args()
 
-    # Load the policy parameters from the file
+    # Load the policy parameters from the file.
     policy = np.load(args.filename)
     
-    # Dynamically import the module that defines policy_action
+    # Dynamically import the module that defines policy_action.
     try:
         policy_module = importlib.import_module(args.policy_module)
     except ImportError as e:
         print(f"Error importing module {args.policy_module}: {e}")
         return
 
-    # Verify that the module has a callable policy_action function
+    # Verify that the module has a callable policy_action function.
     if not hasattr(policy_module, "policy_action") or not callable(policy_module.policy_action):
         print(f"Module {args.policy_module} must define a callable 'policy_action(policy, observation)' function.")
         return
     policy_action_func = policy_module.policy_action
 
-    # Evaluate the policy over 100 episodes (first 5 are rendered)
+    # Evaluate the policy over 100 episodes (first 5 are rendered).
     average_reward = evaluate_policy(policy, policy_action_func, total_episodes=100, render_first=5)
     print(f"Average reward over 100 episodes: {average_reward:.2f}")
 
