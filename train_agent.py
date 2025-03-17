@@ -10,7 +10,7 @@ def policy_action(params, observation):
     logits = np.dot(observation, W) + b
     return np.argmax(logits)
 
-def evaluate_policy(params, episodes=3, render=False):
+def evaluate_policy(params, episodes=10, render=False):  # Increased episodes to 10
     total_reward = 0.0
     for _ in range(episodes):
         env = gym.make('LunarLander-v3', render_mode='human' if render else 'rgb_array')
@@ -38,7 +38,7 @@ def simulated_binary_crossover(parent1, parent2, eta_c=15):
         child[i] = 0.5 * ((1 + beta) * parent1[i] + (1 - beta) * parent2[i])
     return child
 
-def polynomial_mutation(child, mutation_rate=0.1, eta_m=20, lower_bound=-5, upper_bound=5):
+def polynomial_mutation(child, mutation_rate=0.05, eta_m=20, lower_bound=-10, upper_bound=10):  # Adjusted mutation rate and bounds
     gene_size = child.shape[0]
     for i in range(gene_size):
         if np.random.rand() < mutation_rate:
@@ -56,17 +56,17 @@ def polynomial_mutation(child, mutation_rate=0.1, eta_m=20, lower_bound=-5, uppe
             child[i] = np.clip(child[i], lower_bound, upper_bound)
     return child
 
-def genetic_algorithm(population_size=50, num_generations=50, elite_frac=0.2,
-                      mutation_rate=0.1, lower_bound=-5, upper_bound=5):
+def genetic_algorithm(population_size=1000, num_generations=200, elite_frac=0.3,  # Increased population size, generations, and elite fraction
+                      mutation_rate=0.05, lower_bound=-10, upper_bound=10):  # Adjusted mutation rate and bounds
     gene_size = 8 * 4 + 4  # 8 inputs x 4 outputs + 4 biases = 36 parameters
-    population = np.random.randn(population_size, gene_size)
+    population = np.random.uniform(lower_bound, upper_bound, (population_size, gene_size))  # Uniform initialization within bounds
     
     num_elites = int(population_size * elite_frac)
     best_reward = -np.inf
     best_params = None
 
     for generation in range(num_generations):
-        fitness = np.array([evaluate_policy(individual, episodes=3) for individual in population])
+        fitness = np.array([evaluate_policy(individual, episodes=10) for individual in population])  # Increased episodes to 10
         elite_indices = fitness.argsort()[::-1][:num_elites]
         elites = population[elite_indices]
         
@@ -90,8 +90,8 @@ def genetic_algorithm(population_size=50, num_generations=50, elite_frac=0.2,
     
     return best_params
 
-def train_and_save(filename, population_size=50, num_generations=50, elite_frac=0.2,
-                   mutation_rate=0.1, lower_bound=-5, upper_bound=5):
+def train_and_save(filename, population_size=1000, num_generations=200, elite_frac=0.3,
+                   mutation_rate=0.05, lower_bound=-10, upper_bound=10):
     best_params = genetic_algorithm(population_size, num_generations, elite_frac,
                                     mutation_rate, lower_bound, upper_bound)
     np.save(filename, best_params)
@@ -121,12 +121,12 @@ if __name__ == "__main__":
         # Train and save the best policy
         best_params = train_and_save(
             args.filename,
-            population_size=1000,  # Set population size to 1000
-            num_generations=200,  # Set number of generations to 100
-            elite_frac=0.2,
-            mutation_rate=0.05,
-            lower_bound=-5,
-            upper_bound=5
+            population_size=1000,  # Increased population size
+            num_generations=200,  # Increased number of generations
+            elite_frac=0.3,  # Increased elite fraction
+            mutation_rate=0.05,  # Adjusted mutation rate
+            lower_bound=-10,  # Adjusted lower bound
+            upper_bound=10  # Adjusted upper bound
         )
     elif args.play:
         # Load and play with the best policy
