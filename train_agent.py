@@ -124,7 +124,7 @@ if __name__ == "__main__":
             population_size=1000,  # Set population size to 1000
             num_generations=200,  # Set number of generations to 100
             elite_frac=0.2,
-            mutation_rate=0.1,
+            mutation_rate=0.05,
             lower_bound=-5,
             upper_bound=5
         )
