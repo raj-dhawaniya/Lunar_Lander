@@ -6,53 +6,54 @@ on:
 jobs:
   train:
     runs-on: ubuntu-latest
+    timeout-minutes: 355  # Set timeout to 5 hours and 55 minutes (355 minutes)
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y swig  # Required for Box2D
-        python -m pip install --upgrade pip
-        pip install gymnasium[box2d] numpy argparse torch
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y swig  # Required for Box2D
+          python -m pip install --upgrade pip
+          pip install gymnasium[box2d] numpy argparse torch
 
-    - name: Get previous run ID
-      id: get_run_id
-      run: |
-        PREVIOUS_RUN_ID=$(gh run list --workflow="Train Lunar Lander Agent" --status=success --limit=1 | cut -f 1)
-        echo "previous_run_id=$PREVIOUS_RUN_ID" >> $GITHUB_OUTPUT
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Get previous run ID
+        id: get_run_id
+        run: |
+          PREVIOUS_RUN_ID=$(gh run list --workflow="Train Lunar Lander Agent" --status=success --limit=1 | cut -f 1)
+          echo "previous_run_id=$PREVIOUS_RUN_ID" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Download previous best policy (if available)
-      if: steps.get_run_id.outputs.previous_run_id != ''
-      uses: actions/download-artifact@v4
-      with:
-        name: best-policy
-        path: .
-        run_id: ${{ steps.get_run_id.outputs.previous_run_id }}
-      continue-on-error: true
+      - name: Download previous best policy (if available)
+        if: steps.get_run_id.outputs.previous_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: best-policy
+          path: .
+          run_id: ${{ steps.get_run_id.outputs.previous_run_id }}
+        continue-on-error: true
 
-    - name: Train the agent (Resume if best_policy.npy exists)
-      run: |
-        if [ -f "best_policy.npy" ]; then
-          echo "Resuming training from best_policy.npy..."
-          timeout 21300s python train_agent.py --train --filename best_policy.npy
-        else
-          echo "No previous model found. Training from scratch..."
-          timeout 21300s python train_agent.py --train --filename best_policy.npy
-        fi
-       
+      - name: Train the agent (Resume if best_policy.npy exists)
+        run: |
+          if [ -f "best_policy.npy" ]; then
+            echo "Resuming training from best_policy.npy..."
+            timeout 21300s python train_agent.py --train --filename best_policy.npy
+          else
+            echo "No previous model found. Training from scratch..."
+            timeout 21300s python train_agent.py --train --filename best_policy.npy
+          fi
 
-    - name: Upload updated best policy
-      uses: actions/upload-artifact@v4
-      with:
-        name: best-policy
-        path: best_policy.npy
+      - name: Upload updated best policy
+        if: always()  # Ensure this step runs even if the job fails or times out
+        uses: actions/upload-artifact@v4
+        with:
+          name: best-policy
+          path: best_policy.npy
