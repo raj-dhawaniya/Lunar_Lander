@@ -122,7 +122,7 @@ if __name__ == "__main__":
         best_params = train_and_save(
             args.filename,
             population_size=1000,  # Set population size to 1000
-            num_generations=100,  # Set number of generations to 100
+            num_generations=200,  # Set number of generations to 100
             elite_frac=0.2,
             mutation_rate=0.1,
             lower_bound=-5,
